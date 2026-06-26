@@ -13,11 +13,16 @@ export default defineConfig(() => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
-      allowedHosts: ["3000-01kvztaqew7wratfb25ghw4284.cloudspaces.litng.ai"]
+      // Allow the dev host(s). Set ALLOWED_HOSTS (comma-separated) to override;
+      // defaults to permissive for local/dev. Production serves the built
+      // bundle via Express (server.ts), not the Vite dev server.
+      allowedHosts: (process.env.ALLOWED_HOSTS
+        ? process.env.ALLOWED_HOSTS.split(',').map((h) => h.trim())
+        : true) as true | string[],
     },
   };
 });

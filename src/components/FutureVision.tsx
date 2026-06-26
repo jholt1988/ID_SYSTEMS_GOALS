@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Image as ImageIcon, Video, Loader2, Upload, AlertTriangle } from 'lucide-react';
+import { aiPost, loadSettings, providerSupports, NotConfiguredError } from '../lib/aiClient';
 
 export default function FutureVision() {
   const [activeSubtab, setActiveSubtab] = useState<'image' | 'video'>('image');
@@ -19,22 +20,26 @@ export default function FutureVision() {
   const [isStartingVideo, setIsStartingVideo] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoSupported, setVideoSupported] = useState(true);
+
+  // Gate the video tab on whether the selected provider supports video gen.
+  useEffect(() => {
+    providerSupports('video').then(setVideoSupported).catch(() => setVideoSupported(false));
+  }, [activeSubtab]);
 
   const handleGenerateImage = async () => {
     setIsGeneratingImage(true);
     try {
       const fullPrompt = `A high quality photorealistic image of a person ${timeline} days after successfully sticking to their life operating system habits: ${imagePrompt}`;
-      const res = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: fullPrompt })
-      });
-      const data = await res.json();
+      const data = await aiPost<{ imageUrl?: string }>('/api/generate-image', { prompt: fullPrompt }, 'image');
       if (data.imageUrl) {
         setGeneratedImage(data.imageUrl);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      if (e instanceof NotConfiguredError) {
+        alert('Add your AI provider API key in Settings (top-right) first.');
+      }
     } finally {
       setIsGeneratingImage(false);
     }
@@ -54,12 +59,7 @@ export default function FutureVision() {
   const startVideoPoll = (opName: string) => {
     const poll = setInterval(async () => {
       try {
-        const res = await fetch('/api/video-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ operationName: opName })
-        });
-        const data = await res.json();
+        const data = await aiPost<{ done?: boolean }>('/api/video-status', { operationName: opName }, 'video');
         if (data.done) {
           clearInterval(poll);
           setIsVideoDone(true);
@@ -74,10 +74,11 @@ export default function FutureVision() {
 
   const fetchVideo = async (opName: string) => {
     try {
+      const s = loadSettings();
       const res = await fetch('/api/video-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operationName: opName })
+        body: JSON.stringify({ operationName: opName, provider: s.provider, model: s.models.video, apiKey: s.apiKey })
       });
       if (!res.ok) throw new Error("Failed to fetch video");
       const blob = await res.blob();
@@ -92,15 +93,10 @@ export default function FutureVision() {
     setIsStartingVideo(true);
     setVideoError(null);
     try {
-      const res = await fetch('/api/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt: videoPrompt,
-          image: uploadedPhoto // Base64
-        })
-      });
-      const data = await res.json();
+      const data = await aiPost<{ operationName?: string; error?: string }>('/api/generate-video', {
+        prompt: videoPrompt,
+        image: uploadedPhoto // Base64
+      }, 'video');
       if (data.operationName) {
         setVideoOperationName(data.operationName);
         startVideoPoll(data.operationName);
@@ -109,7 +105,7 @@ export default function FutureVision() {
       }
     } catch (e: any) {
       console.error(e);
-      setVideoError(e.message);
+      setVideoError(e instanceof NotConfiguredError ? 'Add your AI provider API key in Settings first.' : e.message);
     } finally {
       setIsStartingVideo(false);
     }
@@ -192,7 +188,16 @@ export default function FutureVision() {
           </div>
         )}
 
-        {activeSubtab === 'video' && (
+        {activeSubtab === 'video' && !videoSupported && (
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-sm">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div>
+              Video generation is only available with the <strong>Google Gemini</strong> provider.
+              Open <strong>AI Settings</strong> (top-right) and switch your provider to Gemini to use this feature.
+            </div>
+          </div>
+        )}
+        {activeSubtab === 'video' && videoSupported && (
           <div className="space-y-6">
             <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex gap-3 text-indigo-300 text-sm">
                <Video className="w-5 h-5 flex-shrink-0 mt-0.5" />

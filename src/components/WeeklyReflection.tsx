@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Sparkles, Loader2, CheckCircle2, ChevronRight, CalendarClock } from 'lucide-react';
+import { aiPost } from '../lib/aiClient';
 
 export default function WeeklyReflection({ systems }: { systems: any[] }) {
   const [questions, setQuestions] = useState<string[]>([]);
@@ -14,12 +15,7 @@ export default function WeeklyReflection({ systems }: { systems: any[] }) {
       setIsLoadingQuestions(true);
       try {
         const systemsContext = systems.map(s => `${s.name} (${s.state})`).join(', ');
-        const res = await fetch('/api/generate-reflection-questions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ systemsContext })
-        });
-        const data = await res.json();
+        const data = await aiPost<{ questions: string[] }>('/api/generate-reflection-questions', { systemsContext }, 'text');
         if (data.questions && data.questions.length === 3) {
           setQuestions(data.questions);
         } else {
@@ -55,12 +51,7 @@ export default function WeeklyReflection({ systems }: { systems: any[] }) {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/process-reflection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers })
-      });
-      const data = await res.json();
+      const data = await aiPost<{ summary?: string }>('/api/process-reflection', { answers }, 'text');
       if (data.summary) {
         setSummary(data.summary);
       }
