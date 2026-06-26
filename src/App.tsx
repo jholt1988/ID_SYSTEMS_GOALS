@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Database, Server, AlertTriangle, Cpu, CheckCircle2, LayoutTemplate, Lock, Zap, Shield, Info, TrendingUp, Sparkles, Send, User as UserIcon, X, Pencil, History as HistoryIcon, Trophy, Medal, Award, Crown, Star, ChevronDown, ChevronUp, CheckSquare, Loader2 } from 'lucide-react';
+import { Database, Server, AlertTriangle, Cpu, CheckCircle2, LayoutTemplate, Lock, Zap, Shield, Info, TrendingUp, Sparkles, Send, User as UserIcon, X, Pencil, History as HistoryIcon, Trophy, Medal, Award, Crown, Star, ChevronDown, ChevronUp, CheckSquare, Loader2, Settings as SettingsIcon } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip as RechartsTooltip, YAxis, ReferenceLine } from 'recharts';
 import Markdown from 'react-markdown';
 import FutureVision from './components/FutureVision';
@@ -10,6 +10,8 @@ import AdaptiveTimingSimulation from './components/AdaptiveTimingSimulation';
 import IdentityShiftTracker from './components/IdentityShiftTracker';
 import AIPreparation from './components/AIPreparation';
 import { getAccessToken } from './lib/firebase';
+import { aiPost } from './lib/aiClient';
+import AISettings from './components/AISettings';
 
 const PRISMA_CODE = `generator client {
   provider = "prisma-client-js"
@@ -944,19 +946,15 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
         parts: [{ text: m.content }]
       }));
       
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history, message: userMessage })
-      });
+      const data = await aiPost<{ text: string }>('/api/chat', { history, message: userMessage }, 'text');
 
-      if (!res.ok) throw new Error('Failed to fetch response');
-      const data = await res.json();
-      
       setMessages(prev => [...prev, { role: 'model', content: data.text }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'model', content: "I'm sorry, I'm having trouble connecting to the network right now. Please try again." }]);
+      const friendly = error?.name === 'NotConfiguredError'
+        ? "Please add your AI provider API key in Settings (top-right gear) to start."
+        : (error?.message || "I'm sorry, I'm having trouble connecting right now. Please try again.");
+      setMessages(prev => [...prev, { role: 'model', content: friendly }]);
     } finally {
       setIsLoading(false);
     }
@@ -1029,9 +1027,11 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-slate-300 font-sans selection:bg-indigo-500/30 flex flex-col">
+      <AISettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <header className="border-b border-white/5 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-50 flex-shrink-0">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center">
           <div className="flex items-center gap-3 w-full">
@@ -1044,6 +1044,13 @@ export default function App() {
                 <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Nominal
               </span>
             </h1>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              title="AI provider settings"
+              className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:bg-white/5 hover:text-slate-200 border border-white/10 transition-colors"
+            >
+              <SettingsIcon className="w-4 h-4" /> AI Settings
+            </button>
           </div>
         </div>
       </header>
