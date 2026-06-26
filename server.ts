@@ -20,7 +20,27 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '50mb' }));
+  // Body limit kept modest to reduce DoS surface. Image/video uploads are
+  // base64 data URLs; 10mb comfortably covers a 16:9 still. Raise only if a
+  // concrete payload needs it.
+  app.use(express.json({ limit: '10mb' }));
+
+  // Safely parse a model response that is expected to be JSON. Models can wrap
+  // JSON in markdown fences or emit prose, so JSON.parse() must never be called
+  // unguarded on response.text.
+  const safeJsonParse = <T>(raw: string | undefined | null, fallback: T): T => {
+    if (!raw) return fallback;
+    let text = raw.trim();
+    // Strip ```json ... ``` or ``` ... ``` fences if present.
+    const fence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (fence) text = fence[1].trim();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      console.error('safeJsonParse: response was not valid JSON:', raw.slice(0, 200));
+      return fallback;
+    }
+  };
 
   // API Route for AI Onboarding Chat
   app.post('/api/chat', async (req, res) => {
@@ -71,7 +91,7 @@ Systems context: ${systemsContext}`;
         }
       });
 
-      res.json({ questions: JSON.parse(response.text || '[]') });
+      res.json({ questions: safeJsonParse<string[]>(response.text, []) });
     } catch (error: any) {
       console.error("Reflection Gen Error:", error);
       res.status(500).json({ error: error.message });
@@ -108,6 +128,9 @@ Provide a short, encouraging summary of their progress and 1-2 brief suggestions
       const { prompt } = req.body;
       const aiClient = getAI();
       
+      // NOTE: verify this model id against the live Gemini API. Google's docs
+      // list `gemini-3.1-flash-image` (the `-preview` alias may or may not
+      // resolve). If image generation 404s, drop the `-preview` suffix.
       const interaction = await aiClient.interactions.create({
         model: 'gemini-3.1-flash-image-preview',
         input: prompt,
@@ -141,6 +164,10 @@ Provide a short, encouraging summary of their progress and 1-2 brief suggestions
     try {
       const aiClient = getAI();
       let payload: any = {
+        // NOTE: verify this model id against the live Veo API. Google's docs
+        // list `veo-3.1-generate-preview` and `veo-3.1-lite-generate-preview`
+        // (no `-fast-` variant). If video generation 404s, switch to
+        // `veo-3.1-generate-preview`.
         model: 'veo-3.1-fast-generate-preview',
         prompt: req.body.prompt || 'A video showing progress and a day in the life',
         config: {
